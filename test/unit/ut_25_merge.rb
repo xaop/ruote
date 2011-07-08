@@ -38,20 +38,20 @@ class MergeTest < Test::Unit::TestCase
 
     assert_equal(
       { 'fields' => { 'a' => 1 } },
-      Merger.new.merge_workitems(new_workitems, 'override'))
+      Merger.new.merge_workitems(new_workitems, 'override', true))
     assert_equal(
       { 'fields' => { 'a' => 0, 'b' => -1 } },
-      Merger.new.merge_workitems(new_workitems.reverse, 'override'))
+      Merger.new.merge_workitems(new_workitems.reverse, 'override', true))
   end
 
   def test_mix
 
     assert_equal(
       { 'fields' => { 'a' => 1, 'b' => -1 } },
-      Merger.new.merge_workitems(new_workitems, 'mix'))
+      Merger.new.merge_workitems(new_workitems, 'mix', true))
     assert_equal(
       { 'fields' => { 'a' => 0, 'b' => -1 } },
-      Merger.new.merge_workitems(new_workitems.reverse, 'mix'))
+      Merger.new.merge_workitems(new_workitems.reverse, 'mix', true))
   end
 
   def test_isolate
@@ -61,13 +61,13 @@ class MergeTest < Test::Unit::TestCase
         '0' => { 'a' => 0, 'b' => -1 },
         '1' => { 'a' => 1 }
       } },
-      Merger.new.merge_workitems(new_workitems, 'isolate'))
+      Merger.new.merge_workitems(new_workitems, 'isolate', true))
     assert_equal(
       { 'fields' => {
         '0' => { 'a' => 1 },
         '1' => { 'a' => 0, 'b' => -1 }
       } },
-      Merger.new.merge_workitems(new_workitems.reverse, 'isolate'))
+      Merger.new.merge_workitems(new_workitems.reverse, 'isolate', true))
   end
 
   def test_stack
@@ -77,37 +77,48 @@ class MergeTest < Test::Unit::TestCase
           'stack' => [ { 'a' => 0, 'b' => -1 }, { 'a' => 1 } ],
           'stack_attributes' => nil
       } },
-      Merger.new.merge_workitems(new_workitems, 'stack'))
+      Merger.new.merge_workitems(new_workitems, 'stack', true))
     assert_equal(
       { 'fields' => {
           'stack' => [ { 'a' => 1 }, { 'a' => 0, 'b' => -1 } ],
           'stack_attributes' => nil
       } },
-      Merger.new.merge_workitems(new_workitems.reverse, 'stack'))
+      Merger.new.merge_workitems(new_workitems.reverse, 'stack', true))
   end
 
   def test_unknown
 
     assert_equal(
       { 'fields' => { 'a' => 0, 'b' => -1 } },
-      Merger.new.merge_workitems(new_workitems, '???'))
+      Merger.new.merge_workitems(new_workitems, '???', true))
     assert_equal(
       { 'fields' => { 'a' => 1 } },
-      Merger.new.merge_workitems(new_workitems.reverse, '???'))
+      Merger.new.merge_workitems(new_workitems.reverse, '???', true))
   end
 
   def test_union
 
     workitems = [
-      new_workitem('a' => 0, 'b' => [ 'x' ], 'c' => { 'aa' => 'bb' }),
-      new_workitem('a' => 1, 'b' => [ 'y' ], 'c' => { 'cc' => 'dd' })
+      new_workitem('a' => 0, 'b' => [ 'x', 'y' ], 'c' => { 'aa' => 'bb' }),
+      new_workitem('a' => 1, 'b' => [ 'x', 'z' ], 'c' => { 'cc' => 'dd' })
     ]
 
     assert_equal(
       { 'fields' => {
-        'a' => 1, 'b' => [ 'x', 'y' ], 'c' => { 'aa' => 'bb', 'cc' => 'dd' }
+        'a' => 1, 'b' => [ 'x', 'y', 'z' ], 'c' => { 'aa' => 'bb', 'cc' => 'dd' }
       } },
-      Merger.new.merge_workitems(workitems, 'union'))
+      Merger.new.merge_workitems(workitems, 'union', true))
+
+    workitems = [
+      new_workitem('a' => 0, 'b' => [ 'x', 'y' ], 'c' => { 'aa' => 'bb' }),
+      new_workitem('a' => 1, 'b' => [ 'x', 'z' ], 'c' => { 'cc' => 'dd' })
+    ]
+
+    assert_equal(
+      { 'fields' => {
+        'a' => 1, 'b' => [ 'x', 'y', 'x', 'z' ], 'c' => { 'aa' => 'bb', 'cc' => 'dd' }
+      } },
+      Merger.new.merge_workitems(workitems, 'union', false))
   end
 end
 

@@ -147,14 +147,42 @@ module Ruote::Exp
   #
   # Will override atomic fields, concat arrays and merge hashes...
   #
+  #   sequence do
+  #     concurrence :merge_type => :union do
+  #       reviewer1
+  #       reviewer2
+  #     end
+  #     editor
+  #   end
+  #
   # The union of those two workitems
   #
-  #   { 'a' => 0, 'b' => [ 'x' ], 'c' => { 'aa' => 'bb' }
-  #   { 'a' => 1, 'b' => [ 'y' ], 'c' => { 'cc' => 'dd' }
+  #   { 'a' => 0, 'b' => [ 'x' 'y' ], 'c' => { 'aa' => 'bb' }
+  #   { 'a' => 1, 'b' => [ 'x' 'z' ], 'c' => { 'cc' => 'dd' }
   #
   # will be
   #
-  #   { 'a' => 1, 'b' => [ 'x', 'y' ], 'c' => { 'aa' => 'bb', 'cc' => 'dd' } }
+  #   { 'a' => 1, 'b' => [ 'x', 'y', 'z' ], 'c' => { 'aa' => 'bb', 'cc' => 'dd' } }
+  #
+  # Note that when two arrays contains identical values, these values are not duplicated.
+  # You can prevent that by setting :uniq_on_union_array to false
+  #
+  #   sequence do
+  #     concurrence :merge_type => :union, :uniq_on_union_array => false do
+  #       reviewer1
+  #       reviewer2
+  #     end
+  #     editor
+  #   end
+  #
+  # The union of those two workitems
+  #
+  #   { 'a' => 0, 'b' => [ 'x' 'y' ], 'c' => { 'aa' => 'bb' }
+  #   { 'a' => 1, 'b' => [ 'x' 'z' ], 'c' => { 'cc' => 'dd' }
+  #
+  # will be
+  #
+  #   { 'a' => 1, 'b' => [ 'x', 'y', 'x', 'z' ], 'c' => { 'aa' => 'bb', 'cc' => 'dd' } }
   #
   #
   # === :over_if (and :over_unless)
@@ -316,7 +344,8 @@ module Ruote::Exp
           h.cmerge == 'highest' ? is.reverse : is
       end
 
-      merge_workitems(wis, h.cmerge_type)
+      uniq_on_union_array = !(attribute(:uniq_on_union_array) == false)
+      merge_workitems(wis, h.cmerge_type, uniq_on_union_array)
     end
   end
 end

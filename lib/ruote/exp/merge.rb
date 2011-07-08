@@ -35,12 +35,12 @@ module Ruote::Exp
     #
     # The return value is the merged workitem.
     #
-    def merge_workitems(workitems, merge_type)
+    def merge_workitems(workitems, merge_type, uniq_on_union_array)
 
       rworkitems = workitems.reverse
 
       workitems.inject(nil) do |t, wi|
-        merge_workitem(workitems.index(wi), t, wi, merge_type)
+        merge_workitem(workitems.index(wi), t, wi, merge_type, uniq_on_union_array)
       end
     end
 
@@ -54,7 +54,7 @@ module Ruote::Exp
     # in the target workitem. The name of this field is the child_id of the
     # source workitem (a string from '0' to '99999' and beyond)
     #
-    def merge_workitem(index, target, source, merge_type)
+    def merge_workitem(index, target, source, merge_type, uniq_on_union_array)
 
       return source if merge_type == 'override'
 
@@ -101,7 +101,11 @@ module Ruote::Exp
               tv = target['fields'][k]
 
               if sv.is_a?(Array) and tv.is_a?(Array)
-                tv.concat(sv)
+		if uniq_on_union_array
+                  tv.concat(sv).uniq!
+		else
+                  tv.concat(sv)
+		end
               elsif sv.is_a?(Hash) and tv.is_a?(Hash)
                 tv.merge!(sv)
               else
