@@ -62,9 +62,13 @@ module Ruote
 
       if storage.respond_to?(:storage)
         @storage = storage.storage
-        @context = storage.context
       else
         @storage = storage
+      end
+
+      if storage.respond_to?(:context)
+        @context = storage.context
+      else
         @context = Ruote::Context.new(storage)
       end
 
