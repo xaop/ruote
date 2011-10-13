@@ -5,7 +5,7 @@
 # Mon Aug  3 12:13:11 JST 2009
 #
 
-require File.join(File.dirname(__FILE__), 'base')
+require File.expand_path('../base', __FILE__)
 
 require 'ruote/participant'
 
@@ -22,13 +22,13 @@ class EftSaveTest < Test::Unit::TestCase
 
     #noisy
 
-    @engine.register_participant :alpha, Ruote::StorageParticipant
+    @dashboard.register_participant :alpha, Ruote::StorageParticipant
 
-    wfid = @engine.launch(pdef)
+    wfid = @dashboard.launch(pdef)
 
     wait_for(:alpha)
 
-    ps = @engine.process(wfid)
+    ps = @dashboard.process(wfid)
 
     assert_equal Hash, ps.variables['v'].class
   end
@@ -43,9 +43,9 @@ class EftSaveTest < Test::Unit::TestCase
 
     #noisy
 
-    alpha = @engine.register_participant :alpha, Ruote::StorageParticipant
+    alpha = @dashboard.register_participant :alpha, Ruote::StorageParticipant
 
-    wfid = @engine.launch(pdef)
+    wfid = @dashboard.launch(pdef)
 
     wait_for(:alpha)
 
@@ -63,9 +63,9 @@ class EftSaveTest < Test::Unit::TestCase
 
     #noisy
 
-    alpha = @engine.register_participant :alpha, Ruote::StorageParticipant
+    alpha = @dashboard.register_participant :alpha, Ruote::StorageParticipant
 
-    wfid = @engine.launch(pdef)
+    wfid = @dashboard.launch(pdef)
 
     wait_for(:alpha)
 
@@ -84,10 +84,10 @@ class EftSaveTest < Test::Unit::TestCase
       save :to => 'f:a'
     end
 
-    #@engine.noisy = true
+    #@dashboard.noisy = true
 
-    wfid = @engine.launch(pdef)
-    fields = @engine.wait_for(wfid)['workitem']['fields']
+    wfid = @dashboard.launch(pdef)
+    fields = @dashboard.wait_for(wfid)['workitem']['fields']
 
     assert_equal(
       { 'deep' => { 'x' => 'val0', 'h' => {} } },
@@ -105,10 +105,10 @@ class EftSaveTest < Test::Unit::TestCase
       set 'f:y' => '$v:a'
     end
 
-    #@engine.noisy = true
+    #@dashboard.noisy = true
 
-    wfid = @engine.launch(pdef)
-    fields = @engine.wait_for(wfid)['workitem']['fields']
+    wfid = @dashboard.launch(pdef)
+    fields = @dashboard.wait_for(wfid)['workitem']['fields']
 
     assert_equal({ 'x' => 'val0' }, fields['y'])
   end

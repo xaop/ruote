@@ -41,6 +41,8 @@ module Ruote
     PROC_ACTIONS = %w[ cancel kill pause resume ].collect { |a| a + '_process' }
     DISP_ACTIONS = %w[ dispatch dispatch_cancel dispatch_pause dispatch_resume ]
 
+    attr_reader :name
+
     attr_reader :storage
     attr_reader :context
 
@@ -49,14 +51,27 @@ module Ruote
 
     # Given a storage, creates a new instance of a Worker.
     #
-    def initialize(storage)
+    def initialize(name, storage=nil)
 
-      @subscribers = []
-        # must be ready before the storage is created
-        # services like Logger to subscribe to the worker
+      if storage.nil?
+        storage = name
+        name = nil
+      end
 
-      @storage = storage
-      @context = Ruote::Context.new(storage, self)
+      @name = name || 'worker'
+
+      if storage.respond_to?(:storage)
+        @storage = storage.storage
+        @context = storage.context
+      else
+        @storage = storage
+        @context = Ruote::Context.new(storage)
+      end
+
+      service_name = @name
+      service_name << '_worker' unless service_name.match(/worker$/)
+
+      @context.add_service(service_name, self)
 
       @last_time = Time.at(0.0).utc # 1970...
 
@@ -64,7 +79,10 @@ module Ruote
       @run_thread = nil
 
       @msgs = []
-      @sleep_time = 0.000
+
+      @sleep_time = @context['restless_worker'] ? nil : 0.000
+
+      @info = @context['worker_info_disabled'] == true ? nil : Info.new(self)
     end
 
     # Runs the worker in the current thread. See #run_in_thread for running
@@ -79,8 +97,7 @@ module Ruote
     #
     def run_in_thread
 
-      Thread.abort_on_exception = true
-        # TODO : remove me at some point
+      #Thread.abort_on_exception = true
 
       @running = true
 
@@ -95,28 +112,16 @@ module Ruote
       @run_thread.join if @run_thread
     end
 
-    # Loggers and trackers call this method when subscribing for events /
-    # actions in this worker.
-    #
-    def subscribe(actions, subscriber)
-
-      @subscribers << [ actions, subscriber ]
-    end
-
     # Shuts down this worker (makes sure it won't fetch further messages
     # and schedules).
     #
-    def shutdown(join=true)
+    def shutdown
 
       @running = false
 
-      if join
-        begin
-          @run_thread.join
-        rescue Exception => e
-        end
-      else
-        sleep(3)
+      begin
+        @run_thread.join
+      rescue Exception => e
       end
     end
 
@@ -148,6 +153,18 @@ module Ruote
 
     protected
 
+    # Hiding the details of @storage.get_msgs away.
+    #
+    def get_msgs
+
+      if @msgs = @storage.method(:get_msgs).arity == 0
+        # fortunately method and arity are cheap
+        @storage.get_msgs
+      else
+        @storage.get_msgs(self)
+      end
+    end
+
     # One worker step, fetches schedules and triggers those whose time has
     # came, then fetches msgs and processes them.
     #
@@ -155,6 +172,9 @@ module Ruote
 
       now = Time.now.utc
       delta = now - @last_time
+
+      #
+      # trigger schedules whose time has come
 
       if delta >= 0.8
         #
@@ -165,9 +185,10 @@ module Ruote
         @storage.get_schedules(delta, now).each { |sche| trigger(sche) }
       end
 
-      # msgs
+      #
+      # process msgs (atomic workflow operations)
 
-      @msgs = @storage.get_msgs if @msgs.empty?
+      @msgs = get_msgs if @msgs.empty?
 
       processed = 0
       collisions = 0
@@ -188,18 +209,36 @@ module Ruote
 
         #@msgs.concat(@storage.get_local_msgs)
 
-        #print r == false ? '*' : '.'
-
         break if Time.now.utc - @last_time >= 0.8
       end
 
-      #p processed
+      #
+      # batch over, let's rest
 
-      if processed == 0
+      take_a_rest(processed)
+    end
+
+    # In order not to hammer the storage for msgs too much, take a rest.
+    #
+    # If the number of processed messages is more than zero, there are probably
+    # more msgs coming, no time for a rest...
+    #
+    # If @sleep_time is nil (restless_worker option set to true), the worker
+    # will never rest.
+    #
+    def take_a_rest(msgs_processed)
+
+      return if @sleep_time == nil
+
+      if msgs_processed == 0
+
         @sleep_time += 0.001
         @sleep_time = 0.499 if @sleep_time > 0.499
+
         sleep(@sleep_time)
+
       else
+
         @sleep_time = 0.000
       end
     end
@@ -258,31 +297,29 @@ module Ruote
 
           self.send(action, msg)
 
+        elsif action == 'put_doc'
+
+          put_doc(msg)
+
         #else
-          # msg got deleted, might still be interesting for a subscriber
+          # no special processing required for message, let it pass
+          # to the subscribers (the notify two lines after)
         end
 
-        notify(msg)
+        @context.notify(msg)
+          # notify subscribers of successfully processed msgs
 
       rescue => exception
 
         @context.error_handler.msg_handle(msg, exception)
       end
 
+      @context.storage.done(self, msg) if @context.storage.respond_to?(:done)
+
+      @info << msg if @info
+        # for the stats
+
       true
-    end
-
-    # Given a successfully executed msg, now notifies all the subscribers
-    # interested in the kind of action the msg ordered.
-    #
-    def notify(msg)
-
-      @subscribers.each do |actions, subscriber|
-
-        if actions == :all || actions.include?(msg['action'])
-          subscriber.notify(msg)
-        end
-      end
     end
 
     # Works for both the 'launch' and the 'apply' msgs.
@@ -301,25 +338,27 @@ module Ruote
       # msg['wfid'] only : it's a launch
       # msg['fei'] : it's a sub launch (a supplant ?)
 
-      wi['wf_name'] ||= (
-        tree[1]['name'] || tree[1].keys.find { |k| tree[1][k] == nil })
+      if is_launch?(msg, exp_class)
 
-      wi['wf_revision'] ||= (
-        tree[1]['revision'] || tree[1]['rev'])
+        wi['wf_name'] ||= (
+          tree[1]['name'] || tree[1].keys.find { |k| tree[1][k] == nil })
+        wi['wf_revision'] ||= (
+          tree[1]['revision'] || tree[1]['rev'])
+      end
 
       exp_hash = {
         'fei' => msg['fei'] || {
           'engine_id' => @context.engine_id,
           'wfid' => msg['wfid'],
           'subid' => Ruote.generate_subid(msg.inspect),
-          'expid' => '0' },
+          'expid' => msg['expid'] || '0' },
         'parent_id' => msg['parent_id'],
-        #'original_tree' => tree,
         'variables' => variables,
         'applied_workitem' => wi,
         'forgotten' => msg['forgotten'],
-        'stash' => msg['stash']
-      }
+        'lost' => msg['lost'],
+        'flanking' => msg['flanking'],
+        'stash' => msg['stash'] }
 
       if not exp_class
 
@@ -348,9 +387,13 @@ module Ruote
     #
     def is_launch?(msg, exp_class)
 
-      return false if exp_class != Ruote::Exp::DefineExpression
-      return true if msg['action'] == 'launch'
-      (msg['trigger'] == 'on_re_apply')
+      if exp_class != Ruote::Exp::DefineExpression
+        false
+      elsif msg['action'] == 'launch'
+        true
+      else
+        (msg['trigger'] == 'on_re_apply')
+      end
     end
 
     # Handles a 'cancel_process' msg (translates it into a "cancel root
@@ -388,6 +431,112 @@ module Ruote
     end
 
     alias resume_process pause_process
+
+    # Puts a document in the storage, must succeed (ie will happily steal
+    # the current _rev to place its doc).
+    #
+    def put_doc(msg)
+
+      doc = msg['doc']
+
+      r = @storage.put(doc)
+
+      return unless r.is_a?(Hash)
+
+      doc['_rev'] = r['_rev']
+
+      put_doc(msg)
+    end
+
+    #
+    # Gathering stats about this worker.
+    #
+    # Those stats can then be obtained via Dashboard#worker_info
+    # (Engine#worker_info).
+    #
+    class Info
+
+      def initialize(worker)
+
+        @worker = worker
+        @ip = Ruote.local_ip
+        @hostname = `hostname`.strip rescue nil
+        @system = `uname -a`.strip rescue nil
+
+        @since = Time.now
+        @msgs = []
+        @last_save = Time.now - 2 * 60
+      end
+
+      def <<(msg)
+
+        if msg['put_at'].nil?
+          puts '-' * 80
+          puts "msg missing 'put_at':"
+          pp msg
+          puts '-' * 80
+        end
+
+        @msgs << {
+          'processed_at' => Ruote.now_to_utc_s,
+          'wait_time' => Time.now - Time.parse(msg['put_at'])
+          #'action' => msg['action']
+        }
+
+        save if Time.now > @last_save + 60
+      end
+
+      protected
+
+      def save
+
+        doc = @worker.storage.get('variables', 'workers') || {}
+
+        doc['type'] = 'variables'
+        doc['_id'] = 'workers'
+
+        now = Time.now
+
+        @msgs = @msgs.drop_while { |msg|
+          Time.parse(msg['processed_at']) < now - 3600
+        }
+        mm = @msgs.drop_while { |msg|
+          Time.parse(msg['processed_at']) < now - 60
+        }
+
+        hour_count = @msgs.size < 1 ? 1 : @msgs.size
+        minute_count = mm.size < 1 ? 1 : mm.size
+
+        key = [ @worker.name, @ip, $$.to_s ].join('/')
+
+        (doc['workers'] ||= {})[key] = {
+
+          'class' => @worker.class.to_s,
+          'name' => @name,
+          'ip' => @ip,
+          'hostname' => @hostname,
+          'pid' => $$,
+          'system' => @system,
+          'put_at' => Ruote.now_to_utc_s,
+          'uptime' => Time.now - @since,
+
+          'processed_last_minute' =>
+            minute_count,
+          'wait_time_last_minute' =>
+            mm.inject(0.0) { |s, m| s + m['wait_time'] } / minute_count.to_f,
+          'processed_last_hour' =>
+            hour_count,
+          'wait_time_last_hour' =>
+            @msgs.inject(0.0) { |s, m| s + m['wait_time'] } / hour_count.to_f
+        }
+
+        r = @worker.storage.put(doc)
+
+        @last_save = Time.now
+
+        save unless r.nil?
+      end
+    end
   end
 end
 

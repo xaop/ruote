@@ -23,7 +23,7 @@
 #++
 
 require 'ruote/util/tree'
-require 'ruote/engine/process_error'
+require 'ruote/dashboard/process_error'
 
 
 module Ruote
@@ -31,7 +31,7 @@ module Ruote
   #
   # A 'view' on the status of a process instance.
   #
-  # Returned by the #process and the #processes methods of the Engine.
+  # Returned by the #process and the #processes methods of Ruote::Dashboard.
   #
   class ProcessStatus
 
@@ -60,7 +60,7 @@ module Ruote
     #
     attr_reader :schedules
 
-    # Called by Ruote::Engine#processes or Ruote::Engine#process.
+    # Called by Ruote::Dashboard#processes or Ruote::Dashboard#process.
     #
     def initialize(context, expressions, stored_workitems, errors, schedules)
 
@@ -306,12 +306,20 @@ module Ruote
 
     def to_s
 
-      "(process_status wfid '#{wfid}', " +
-      "expressions #{@expressions.size}, " +
-      "stored_workitems #{@stored_workitems.size}, " +
-      "errors #{@errors.size}, " +
-      "schedules #{@schedules.size}, " +
-      ")"
+      "(" + [
+        "process_status wfid '#{wfid}'",
+        "expressions #{@expressions.size}",
+        "stored_workitems #{@stored_workitems.size}",
+        "errors #{@errors.size}",
+        "schedules #{@schedules.size}"
+      ].join(', ') + ")"
+    end
+
+    def hinspect(indent, h)
+
+      h.collect { |k, v|
+        s << "#{' ' * indent}#{k.inspect}: #{v.inspect}"
+      }.join("\n")
     end
 
     def inspect
@@ -320,7 +328,15 @@ module Ruote
       avars = all_variables.inject({}) { |h, (k, v)| h[Ruote.sid(k)] = v; h }
 
       s = [ "== #{self.class} ==" ]
-      s << "   expressions : #{@expressions.size}"
+      s << ''
+      s << "  wfid:           #{wfid}"
+      s << "  name:           #{definition_name}"
+      s << "  revision:       #{definition_revision}"
+      s << "  last_active:    #{last_active}"
+      s << "  launched_time:  #{launched_time}"
+      s << ''
+      s << "  expressions: #{@expressions.size}"
+      s << ''
       @expressions.each do |e|
         s << "     #{e.fei.to_storage_id}"
         s << "       | #{e.name}"
@@ -328,21 +344,44 @@ module Ruote
         s << "       | #{e.attributes.inspect}"
         s << "       `-parent--> #{e.h.parent_id ? e.parent_id.to_storage_id : 'nil'}"
       end
-      s << "   schedules : #{@schedules.size}"
-      s << "   stored workitems : #{@stored_workitems.size}"
-      s << "   variables :     #{vars.inspect}"
-      s << "   all_variables : #{avars.inspect}"
-      s << "   errors : #{@errors.size}"
-      @errors.each do |e|
-        s << "     ***"
-        s << "     #{e.fei.to_storage_id} :" if e.fei
-        s << "     action : #{e.action}"
-        s << "     message : #{e.message}"
-        s << "     trace :"
-        e.trace.split("\n").each do |line|
-          s << "       #{line}"
+      s << ''
+      s << "  schedules: #{@schedules.size}"
+      if @schedules.size > 0
+        @schedules.each do |sched|
+          s << "    * #{sched['original']}"
+          s << "      #{sched['flavour']} #{sched['at']}"
+          s << "      #{sched['action']}"
+          s << "      #{Ruote.sid(sched['target'])}"
         end
-        s << "     fields : #{e.fields.inspect}"
+        s << ''
+      end
+      s << "  stored workitems: #{@stored_workitems.size}"
+      s << ''
+      s << "  variables:"; s << hinspect(4, vars)
+      s << ''
+      s << "  all_variables:"; s << hinspect(4, avars)
+      s << ''
+      s << "  errors: #{@errors.size}"
+      @errors.each do |e|
+        s << "    ***"
+        s << "      #{e.fei.to_storage_id} :" if e.fei
+        s << "    action: #{e.action}"
+        s << "    message: #{e.message}"
+        s << "    trace:"
+        e.trace.split("\n").each do |line|
+          s << "      #{line}"
+        end
+        s << "    details:"
+        (e.details || '').split("\n").each do |line|
+          s << "      #{line}"
+        end
+        if e.respond_to?(:deviations)
+          s << "    deviations:"
+          (e.deviations || []).each do |line|
+            s << "      #{line.inspect}"
+          end
+        end
+        s << "    fields:"; s << hinspect(6, e.fields)
       end
 
       s.join("\n") + "\n"
@@ -410,17 +449,26 @@ module Ruote
       Ruote.recompose_tree(h)
     end
 
-    # Used by Engine#process and Engine#processes
+    # Used by Ruote::Dashboard#process and #processes
     #
     def self.fetch(context, wfids, opts)
 
       swfids = wfids.collect { |wfid| /!#{wfid}-\d+$/ }
 
-      exps = context.storage.get_many('expressions', wfids).compact
-      swis = context.storage.get_many('workitems', wfids).compact
-      errs = context.storage.get_many('errors', wfids).compact
-      schs = context.storage.get_many('schedules', swfids).compact
-        # some slow storages need the compaction... couch...
+      batch = "#{Thread.current.object_id}-#{Time.now.to_f}"
+        # some storages may optimize when they can distinguish
+        # which get_many fit in the same batch...
+
+      exps = context.storage.get_many(
+        'expressions', wfids, :batch => batch).compact
+      swis = context.storage.get_many(
+        'workitems', wfids, :batch => batch).compact
+      errs = context.storage.get_many(
+        'errors', wfids, :batch => batch).compact
+      schs = context.storage.get_many(
+        'schedules', swfids, :batch => batch).compact
+          #
+          # some slow storages need the compaction... couch...
 
       errs = errs.collect { |err| ProcessError.new(err) }
       schs = schs.collect { |sch| Ruote.schedule_to_h(sch) }

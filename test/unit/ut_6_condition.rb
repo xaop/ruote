@@ -5,7 +5,7 @@
 # Sun Jun 14 17:30:43 JST 2009
 #
 
-require File.join(File.dirname(__FILE__), '..', 'test_helper.rb')
+require File.expand_path('../../test_helper', __FILE__)
 
 require 'ruote/svc/treechecker'
 require 'ruote/svc/expression_map'
@@ -276,6 +276,9 @@ class ConditionTest < Test::Unit::TestCase
 
     assert_b false, "3 in [1, 2]"
     assert_b false, "2 in {1 => 2}"
+
+    assert_b "a in [a, b]"
+    assert_b "'a' in [a, b]"
   end
 
   def test_not_in

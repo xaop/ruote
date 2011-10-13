@@ -5,7 +5,7 @@
 # Sun Jun 14 14:48:03 JST 2009
 #
 
-require File.join(File.dirname(__FILE__), 'base')
+require File.expand_path('../base', __FILE__)
 
 require 'ruote/participant'
 
@@ -23,7 +23,7 @@ class EftUndoTest < Test::Unit::TestCase
       echo 'over'
     end
 
-    alpha = @engine.register_participant :alpha, Ruote::StorageParticipant
+    alpha = @dashboard.register_participant :alpha, Ruote::StorageParticipant
 
     #noisy
 
@@ -47,7 +47,7 @@ class EftUndoTest < Test::Unit::TestCase
       echo 'over'
     end
 
-    alpha = @engine.register_participant :alpha, Ruote::StorageParticipant
+    alpha = @dashboard.register_participant :alpha, Ruote::StorageParticipant
 
     #noisy
 
@@ -93,7 +93,7 @@ class EftUndoTest < Test::Unit::TestCase
       echo '.'
     end
 
-    #@engine.noisy = true
+    #@dashboard.noisy = true
 
     assert_trace '.', pdef
   end
@@ -106,7 +106,7 @@ class EftUndoTest < Test::Unit::TestCase
       echo '.'
     end
 
-    #@engine.noisy = true
+    #@dashboard.noisy = true
 
     assert_trace '.', pdef
   end

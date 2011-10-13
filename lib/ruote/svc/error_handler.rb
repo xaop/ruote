@@ -61,14 +61,15 @@ module Ruote
         'action' => action,
         'fei' => fei,
         'participant_name' => fexp.h.participant_name,
-        'workitem' => fexp.h.applied_workitem }
+        'workitem' => fexp.h.applied_workitem,
+        'put_at' => Ruote.now_to_utc_s }
 
       handle(msg, fexp, exception)
     end
 
     protected
 
-    # As used by the worker.
+    # Called by msg_handle or action_handle.
     #
     def handle(msg, fexp, exception)
 
@@ -106,7 +107,10 @@ module Ruote
       #
       # (this message might get intercepted by a tracker)
 
-      dev = exception.respond_to?(:deviations) ? exception.deviations : nil
+      det = exception.respond_to?(:ruote_details) ?
+        exception.ruote_details : nil
+      dev = exception.respond_to?(:deviations) ?
+        exception.deviations : nil
 
       @context.storage.put_msg(
         'error_intercepted',
@@ -116,6 +120,7 @@ module Ruote
           'class' => exception.class.name,
           'message' => exception.message,
           'trace' => backtrace,
+          'details' => det,
           'deviations' => dev },
         'wfid' => wfid,
         'fei' => fei,
@@ -128,10 +133,32 @@ module Ruote
         '_id' => "err_#{Ruote.to_storage_id(fei)}",
         'message' => exception.inspect,
         'trace' => backtrace.join("\n"),
+        'details' => det,
         'deviations' => dev,
         'fei' => fei,
         'msg' => msg
       ) if fei
+
+    rescue Exception => e
+
+      # utter failure, can't store the error...
+
+      puts 'err_______' * 8
+      puts
+      puts 'failed to store error'
+      puts
+      puts exception
+      puts *backtrace
+      puts
+      puts 'because of'
+      puts
+      p e
+      puts *e.backtrace
+      puts
+      puts '_______err' * 8
+
+      #exit 1
+        # maybe that'd be best
     end
   end
 end

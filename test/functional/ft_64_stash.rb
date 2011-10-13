@@ -5,7 +5,7 @@
 # Wed Jun 29 07:42:42 JST 2011
 #
 
-require File.join(File.dirname(__FILE__), 'base')
+require File.expand_path('../base', __FILE__)
 
 
 class FtStash < Test::Unit::TestCase
@@ -22,18 +22,18 @@ class FtStash < Test::Unit::TestCase
 
   def test_stash_on_launch
 
-    @engine.register { sally SolParticipant }
+    @dashboard.register { sally SolParticipant }
 
-    #@engine.noisy = true
+    #@dashboard.noisy = true
 
-    wfid = @engine.launch(Ruote.define do
+    wfid = @dashboard.launch(Ruote.define do
       sally
     end,
     {}, # workitem fields
     {}, # process variables
     { 'lost' => 'wallet' }) # root stash
 
-    r = @engine.wait_for(wfid)
+    r = @dashboard.wait_for(wfid)
 
     assert_equal "wallet\nnada", @tracer.to_s
   end

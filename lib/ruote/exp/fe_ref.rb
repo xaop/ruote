@@ -58,7 +58,7 @@ module Ruote::Exp
         tree[1]['ref'] = key
       end
 
-      key = @context.dollar_sub.s(key, self, h.applied_workitem)
+      key = dsub(key)
         # see test/functional/ft_62_
 
       key2, value = iterative_var_lookup(key)
@@ -131,21 +131,10 @@ module Ruote::Exp
 
       new_exp = new_exp_class.new(@context, @h)
 
-      do_schedule_timeout(attribute(:timeout)) if new_exp_name == 'subprocess'
-        #
-        # since ref neutralizes consider_timeout because participant expressions
-        # handle timeout by themselves, we have to force timeout consideration
-        # for subprocess expressions
-
       #new_exp.initial_persist
         # not necessary
 
       new_exp.apply
-    end
-
-    def consider_timeout
-
-      # neutralized
     end
   end
 end

@@ -5,7 +5,7 @@
 # Wed May 20 17:08:17 JST 2009
 #
 
-require File.join(File.dirname(__FILE__), 'base')
+require File.expand_path('../base', __FILE__)
 
 
 class EftSubprocessTest < Test::Unit::TestCase
@@ -96,7 +96,7 @@ class EftSubprocessTest < Test::Unit::TestCase
       end
     end
 
-    @engine.register_participant :alpha do |workitem, fexp|
+    @dashboard.register_participant :alpha do |workitem, fexp|
       stash[:tree] = fexp.lookup_variable('tree')
     end
 
@@ -134,14 +134,14 @@ class EftSubprocessTest < Test::Unit::TestCase
 
     #noisy
 
-    wfid = @engine.launch(pdef)
+    wfid = @dashboard.launch(pdef)
 
     wait_for(wfid)
 
     assert_equal(
       "#<RuntimeError: no subprocess named 'nada' found>",
       #"#<RuntimeError: unknown participant or subprocess 'nada'>",
-      @engine.process(wfid).errors.first.message)
+      @dashboard.process(wfid).errors.first.message)
   end
 
   def test_subprocess_in_engine_variable
@@ -153,7 +153,7 @@ class EftSubprocessTest < Test::Unit::TestCase
       end
     end
 
-    @engine.variables['sub0'] = Ruote.process_definition do
+    @dashboard.variables['sub0'] = Ruote.process_definition do
       echo 'in sub0'
     end
 

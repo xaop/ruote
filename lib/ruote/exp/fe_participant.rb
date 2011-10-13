@@ -150,7 +150,11 @@ module Ruote::Exp
       h.applied_workitem['fields'].delete('t')
       h.applied_workitem['re_dispatch_count'] = 0
 
-      schedule_timeout(h.participant)
+      if tree.last.any?
+        h.applied_workitem['fields']['params']['__children__'] = dsub(tree.last)
+      end
+
+      consider_participant_timers(h.participant)
 
       persist_or_raise
 
@@ -163,6 +167,8 @@ module Ruote::Exp
     end
 
     def cancel(flavour)
+
+      cancel_flanks(flavour)
 
       return reply_to_parent(h.applied_workitem) unless h.participant_name
         # no participant, reply immediately
@@ -219,35 +225,39 @@ module Ruote::Exp
         # let's not care if it fails...
     end
 
-    # Overriden with an empty behaviour. The work is now done a bit later
-    # via the #schedule_timeout method.
-    #
-    def consider_timeout
-    end
-
     # Determines and schedules timeout if any.
     #
     # Note that process definition timeout has priority over participant
     # specified timeout.
     #
-    def schedule_timeout(p_info)
+    def consider_participant_timers(p_info)
 
-      timeout = attribute(:timeout)
+      return if h.has_timers
+        # process definition takes precedence over participant defined timers.
 
-      unless timeout
+      timers = nil
 
-        pa = @context.plist.instantiate(p_info, :if_respond_to? => :rtimeout)
+      [ :rtimers, :timers, :rtimeout ].each do |meth|
 
-        #timeout = (pa.method(:rtimeout).arity == 0 ?
-        #  pa.rtimeout :
-        #  pa.rtimeout(Ruote::Workitem.new(h.applied_workitem))
-        #) if pa
-        timeout = Ruote.participant_send(
-          pa, :rtimeout, 'workitem' => Ruote::Workitem.new(h.applied_workitem)
-        ) if pa
+        pa = @context.plist.instantiate(p_info, :if_respond_to? => meth)
+
+        next unless pa
+
+        timers = Ruote.participant_send(
+          pa, meth, 'workitem' => Ruote::Workitem.new(h.applied_workitem))
+
+        break if timers
       end
 
-      do_schedule_timeout(timeout)
+      return unless timers
+
+      timers = if timers.index(':')
+        timers.split(/,/)
+      else
+        [ "#{timers}: timeout" ]
+      end
+
+      schedule_timers(timers)
     end
 
     def do_pause(msg)

@@ -5,11 +5,11 @@
 # Mon Dec 14 15:03:13 JST 2009
 #
 
-require File.join(File.dirname(__FILE__), %w[ .. test_helper.rb ])
+require File.expand_path('../../test_helper', __FILE__)
 
 require_json
 
-require File.join(File.dirname(__FILE__), %w[ .. functional storage_helper.rb ])
+require File.expand_path('../../functional/storage_helper', __FILE__)
 
 require 'ruote/fei'
 require 'ruote/participant'
@@ -25,6 +25,7 @@ class UtStorage < Test::Unit::TestCase
   def setup
 
     @s = determine_storage({})
+    @s = @s.storage if @s.respond_to?(:storage)
 
     #@s.add_type('errors')
 
@@ -40,6 +41,8 @@ class UtStorage < Test::Unit::TestCase
   end
 
   def teardown
+
+    return unless @s
 
     @s.purge_type!('errors')
     @s.purge_type!('expressions')
@@ -387,6 +390,11 @@ class UtStorage < Test::Unit::TestCase
       'house' => 'minamoto', 'preserve_configuration' => true)
 
     assert_equal 'taira', s.get_configuration('engine')['house']
+
+    # if this test is giving a
+    # "NoMethodError: undefined method `[]' for nil:NilClass"
+    # for ruote-dm, comment out the auto_upgrade! block in
+    # ruote-dm/test/functional_connection.rb
   end
 
   protected

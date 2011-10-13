@@ -6,7 +6,7 @@
 # Sat Apr 30 13:22:49 JST 2011
 #
 
-require File.join(File.dirname(__FILE__), '..', 'test_helper.rb')
+require File.expand_path('../../test_helper', __FILE__)
 
 require 'ruote/reader/radial'
 
@@ -93,8 +93,14 @@ class RadialReaderTest < Test::Unit::TestCase
     [ 'define', { 'india' => nil, 'mount' => 'batten' }, [] ],
     'define "india", mount: batten # whatever')
   assert_read(
-    [ 'romeo', { 'timeout' => '2d'}, [] ],
+    [ 'romeo', { 'timeout' => '2d' }, [] ],
     'romeo timeout: 2d # whatever')
+  assert_read(
+    [ 'audit', { '$href' => nil, 'summary' => 'scale up' }, [] ],
+    'audit $href, summary: "scale up"')
+  assert_read(
+    [ 'audit', { '${href}' => nil, 'summary' => 'scale up' }, [] ],
+    'audit ${href}, summary: "scale up"')
 
   assert_read(
     [ 'sierra', {}, [] ],
@@ -241,6 +247,60 @@ process_definition name: "nada"
       tree)
   end
 
+  def test_lonely_comma
+
+    tree = Ruote::RadialReader.read(%{
+      echo,
+        e: 5,
+        f: 6
+    })
+
+    assert_equal(
+      [ 'echo', { 'e' => 5, 'f' => 6 }, [] ],
+      tree)
+  end
+
+  def test_multine_attributes
+
+    tree = Ruote::RadialReader.read(%{
+      define vladivostok
+        charly a: 1,
+          b: 2
+        doug c:
+          3, d:
+          4
+    })
+
+    assert_equal(
+      [ 'define', { 'vladivostok' => nil }, [
+        [ 'charly', { 'a' => 1, 'b' => 2 }, [] ],
+        [ 'doug', { 'c' => 3, 'd' => 4 }, [] ]
+      ] ],
+      tree)
+  end
+
+  def test_multine_hashes_and_arrays
+
+    tree = Ruote::RadialReader.read(%{
+      define vladivostok
+        alpha data: {
+          a: 1,
+          b: 2
+        }
+        bravo data: [
+          1,
+          2
+        ]
+    })
+
+    assert_equal(
+      [ 'define', { 'vladivostok' => nil }, [
+        [ 'alpha', { 'data' => { 'a' => 1, 'b' => 2 } }, [] ],
+        [ 'bravo', { 'data' => [ 1, 2 ] }, [] ]
+      ] ],
+      tree)
+  end
+
   def test_unicode
 
     tree = Ruote::RadialReader.read(%{
@@ -304,11 +364,13 @@ process_definition name: "nada"
 
     tree = Ruote::RadialReader.read(%{
       process_definition "nada"
+        on_error /unknown/: error_handler
         participant nada, fix: /nada/
     })
 
     assert_equal(
       [ 'process_definition', { 'nada' => nil }, [
+        [ 'on_error', { '/unknown/' => 'error_handler' }, [] ],
         [ 'participant', { 'nada' => nil, 'fix' => '/nada/' }, [] ]
       ]],
       tree)

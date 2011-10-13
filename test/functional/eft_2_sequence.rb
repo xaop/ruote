@@ -5,7 +5,7 @@
 # Sat Jan 24 22:40:35 JST 2009
 #
 
-require File.join(File.dirname(__FILE__), 'base')
+require File.expand_path('../base', __FILE__)
 
 
 class EftSequenceTest < Test::Unit::TestCase
@@ -46,8 +46,8 @@ class EftSequenceTest < Test::Unit::TestCase
       end
     end
 
-    @engine.register_participant '.+' do |workitem|
-      @tracer << workitem.participant_name + "\n"
+    @dashboard.register_participant '.+' do |workitem|
+      context.tracer << workitem.participant_name + "\n"
     end
 
     #noisy

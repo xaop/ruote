@@ -29,10 +29,14 @@ module Ruote
   # A default history implementation, only keeps the most recent stuff
   # in memory.
   #
+  # This class includes Enumerable.
+  #
   # NOTE : this default history is worthless when there are multiple workers.
   # It only keeps track of the 'local' worker if there is one present.
   #
   class DefaultHistory
+
+    include Enumerable
 
     DATE_REGEX = /!(\d{4}-\d{2}-\d{2})!/
     DEFAULT_MAX_SIZE = 1000
@@ -43,9 +47,6 @@ module Ruote
       @options = options
 
       @history = []
-
-      @context.worker.subscribe(:all, self) if @context.worker
-        # only care about logging if there is a worker present
     end
 
     # Returns all the msgs (events), most recent one is last.
@@ -53,6 +54,13 @@ module Ruote
     def all
 
       @history
+    end
+
+    # Enabling Enumerable...
+    #
+    def each(&block)
+
+      @history.each(&block)
     end
 
     # Returns all the wfids for which some piece of history is kept.
@@ -103,10 +111,10 @@ module Ruote
       @history.clear
     end
 
-    # This is the method called by the workqueue. Incoming engine events
-    # are 'processed' here.
+    # This method is called by the worker via the context. Succesfully
+    # processed msgs are passed here.
     #
-    def notify(msg)
+    def on_msg(msg)
 
       msg = Ruote.fulldup(msg)
       msg['seen_at'] = Ruote.now_to_utc_s

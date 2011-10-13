@@ -5,7 +5,7 @@
 # Wed Oct 21 05:35:29 JST 2009
 #
 
-require File.join(File.dirname(__FILE__), 'base')
+require File.expand_path('../base', __FILE__)
 
 
 class FtParticipantSubprocessPriorityTest < Test::Unit::TestCase
@@ -20,7 +20,7 @@ class FtParticipantSubprocessPriorityTest < Test::Unit::TestCase
       end
     end
 
-    @engine.register_participant '.+' do
+    @dashboard.register_participant '.+' do
       @tracer << 'participant'
     end
 

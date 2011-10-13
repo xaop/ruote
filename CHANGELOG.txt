@@ -4,6 +4,35 @@
 
 == ruote - 2.2.1    not yet released
 
+- conf option: 'worker_info_disabled' (defaults to false, enabled)
+- Dashboard#register saves list in one batch (unless :clear => true)
+- DefaultHistory include Enumerable
+- Dashboard#wait_for(action_name) (dispatch, cancel, reply, ...)
+- merged TestLogger into WaitLogger
+- :take and :discard common attributes
+- filter: 'take' and 'discard'
+- Participant: on_cancel -> false prevents on_cancel reply
+- LocalParticipant #is_gone? #is_cancel[l]ed?
+- Dashboard#worker_info
+- msg: put_doc, low-level action
+- participant: #rtimers, #rtimeout and #timers
+- lose and forget expressions: aligned 'multi' behaviour
+- concurrence and citerator: :merge_type => 'ignore'
+- :timers error, redo/retry, undo/pass and commands
+- :timers common attribute
+- :flank common attribute
+- Storage#done(worker, msg) optional method
+- get_many :batch option (used by some storages for optimization)
+- 'stall' expression (mostly for testing)
+- context and worker : subscription reworked
+- worker : 'restless_worker' option
+- Ruote::Dashboard (will slowly phase Ruote::Engine out)
+- :on_timeout => 'rewind', :on_timeout => 'jump to alpha'
+- :on_error => 'rewind', :on_error => 'jump to alpha'
+- dispatch_pool and context['do_not_thread_participants']
+- participant params.__children__
+- on_error expression
+- concurrence :merge_type => 'concat' (vs 'union') (Thanks Julien France)
 - Workitem#re_dispatch_count
 - Engine#launch(pdef, fields, vars, root_stash)
 - Workitem #[] amd #[]= (#lookup and #set_field shortcuts)

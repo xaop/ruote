@@ -5,7 +5,7 @@
 # Thu Jun  9 11:37:56 JST 2011
 #
 
-require File.join(File.dirname(__FILE__), 'base')
+require File.expand_path('../base', __FILE__)
 
 
 class FtTrailingFields < Test::Unit::TestCase
@@ -20,13 +20,13 @@ class FtTrailingFields < Test::Unit::TestCase
       echo 'b', :if => '${t.verbose}'
     end
 
-    @engine.register(:alpha) { |wi| wi.t['verbose'] = true }
-    @engine.register(:bravo, Ruote::NoOpParticipant)
+    @dashboard.register(:alpha) { |wi| wi.t['verbose'] = true }
+    @dashboard.register(:bravo, Ruote::NoOpParticipant)
 
-    #@engine.noisy = true
+    #@dashboard.noisy = true
 
-    wfid = @engine.launch(pdef)
-    @engine.wait_for(wfid)
+    wfid = @dashboard.launch(pdef)
+    @dashboard.wait_for(wfid)
 
     assert_equal 'a', @tracer.to_s
   end

@@ -33,8 +33,8 @@ module Ruote
   #
   #   opts = {}
   #
-  #   engine =
-  #     Ruote::Engine.new(
+  #   dashboard =
+  #     Ruote::Dashboard.new(
   #       Ruote::Worker.new(
   #         Ruote::CompositeStorage.new(
   #           Ruote::FsStorage.new('ruote_work', opts),
@@ -87,7 +87,7 @@ module Ruote
     delegate :empty?, 0
 
     delegate :put_msg, :msgs
-    delegate :get_msgs, :msgs
+    #delegate :get_msgs, :msgs
     delegate :put_schedule, :schedules
     delegate :get_schedules, :schedules
     delegate :delete_schedule, :schedules
@@ -97,8 +97,25 @@ module Ruote
     delegate :get_engine_variable, :variables
     delegate :put_engine_variable, :variables
 
-    #def add_type (type)
-    #end
+    # Let's not use .delegate for get_msgs since this some storage may
+    # accept a worker_name argument.
+    #
+    def get_msgs(worker_name='worker')
+
+      sto = storage('msgs')
+
+      if sto.method(:get_msgs).arity == 0
+        sto.get_msgs
+      else
+        sto.get_msgs(worker_name)
+      end
+    end
+
+    # The dilemma for the CompositeStorage with add_type is "to which
+    # real storage should the new type get added". The solution: do nothing.
+    #
+    def add_type(type)
+    end
 
     TYPES = %w[
       variables

@@ -47,7 +47,7 @@ module Ruote
       rule(:comma) { spaces? >> str(',') >> spaces? }
       rule(:digit) { match('[0-9]') }
 
-      rule(:text) { match('[^\s:,=\[\]\{\}#]').repeat(1).as(:text) }
+      rule(:text) { match('[^\s:,=\[\]#]').repeat(1).as(:text) }
 
       rule(:number) {
         (
@@ -104,8 +104,10 @@ module Ruote
       rule(:line) {
         (
           str(' ').repeat.as(:ind) >>
-          match('[^ \n#"\']').repeat(1).as(:exp) >>
-          (blanks >> attribute >> (comma >> attribute).repeat).as(:atts).maybe
+          match('[^ \n#"\',]').repeat(1).as(:exp) >>
+          (
+            (comma | blanks) >> attribute >> (comma >> attribute).repeat
+          ).as(:atts).maybe
         ).as(:line)
       }
 

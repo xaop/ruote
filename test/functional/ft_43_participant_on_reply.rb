@@ -5,7 +5,7 @@
 # Thu Apr 22 14:41:38 JST 2010
 #
 
-require File.join(File.dirname(__FILE__), 'base')
+require File.expand_path('../base', __FILE__)
 
 require 'ruote/part/local_participant'
 
@@ -34,7 +34,7 @@ class FtParticipantOnReplyTest < Test::Unit::TestCase
       end
     end
 
-    @engine.register_participant :alpha, MyParticipant
+    @dashboard.register_participant :alpha, MyParticipant
 
     #noisy
 
@@ -63,21 +63,21 @@ class FtParticipantOnReplyTest < Test::Unit::TestCase
       end
     end
 
-    @engine.register_participant :alpha, AwkwardParticipant
+    @dashboard.register_participant :alpha, AwkwardParticipant
 
     #noisy
 
-    wfid = @engine.launch(pdef)
+    wfid = @dashboard.launch(pdef)
 
     wait_for(wfid)
 
-    ps = @engine.process(wfid)
+    ps = @dashboard.process(wfid)
 
     assert_equal 1, ps.errors.size
 
     err = ps.errors.first
     err.fields['pass'] = true
-    @engine.replay_at_error(err)
+    @dashboard.replay_at_error(err)
 
     wait_for(wfid)
 

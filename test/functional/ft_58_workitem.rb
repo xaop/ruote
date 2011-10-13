@@ -7,7 +7,7 @@
 # Santa Barbara
 #
 
-require File.join(File.dirname(__FILE__), 'base')
+require File.expand_path('../base', __FILE__)
 
 require 'ruote'
 
@@ -26,9 +26,9 @@ class FtWorkitemTest < Test::Unit::TestCase
 
   def test_wf_info
 
-    @engine.register :alpha, TraceParticipant
+    @dashboard.register :alpha, TraceParticipant
 
-    #@engine.noisy = true
+    #@dashboard.noisy = true
 
     assert_trace(
       'x/y',

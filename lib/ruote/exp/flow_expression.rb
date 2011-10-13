@@ -64,7 +64,11 @@ module Ruote::Exp
     require 'ruote/exp/ro_vf'
 
     COMMON_ATT_KEYS = %w[
-      if unless forget timeout on_error on_cancel on_timeout ]
+      if unless
+      forget lose flank
+      timeout timers
+      on_error on_cancel on_timeout
+    ]
 
     attr_reader :h
 
@@ -112,10 +116,9 @@ module Ruote::Exp
     end
 
     def h=(hash)
+
       @h = hash
-      class << h
-        include Ruote::HashDot
-      end
+      class << @h; include Ruote::HashDot; end
     end
 
     # Returns the Ruote::FlowExpressionId for this expression.
@@ -130,7 +133,9 @@ module Ruote::Exp
     #
     def parent_id
 
-      h.parent_id ? Ruote::FlowExpressionId.new(h.parent_id) : nil
+      h.parent_id ?
+        Ruote::FlowExpressionId.new(h.parent_id) :
+        nil
     end
 
     # Fetches the parent expression, or returns nil if there is no parent
@@ -138,7 +143,9 @@ module Ruote::Exp
     #
     def parent
 
-      Ruote::Exp::FlowExpression.fetch(@context, h.parent_id)
+      h.parent_id ?
+        Ruote::Exp::FlowExpression.fetch(@context, h.parent_id) :
+        nil
     end
 
     # Returns the root expression of this expression.
@@ -261,27 +268,41 @@ module Ruote::Exp
         return reply_to_parent(h.applied_workitem)
       end
 
-      if attribute(:forget).to_s == 'true'
+      pi = h.parent_id
+      reply_immediately = false
 
-        pi = h.parent_id
-        wi = Ruote.fulldup(h.applied_workitem)
+      if attribute(:forget).to_s == 'true'
 
         h.variables = compile_variables
         h.parent_id = nil
         h.forgotten = true
 
-        @context.storage.put_msg('reply', 'fei' => pi, 'workitem' => wi) if pi
-          # reply to parent immediately (if there is a parent)
+        reply_immediately = true
 
       elsif attribute(:lose).to_s == 'true'
 
         h.lost = true
+
+      elsif msg['flanking'] or (attribute(:flank).to_s == 'true')
+
+        h.flanking = true
+
+        reply_immediately = true
+      end
+
+      if reply_immediately and pi
+
+        @context.storage.put_msg(
+          'reply',
+          'fei' => pi,
+          'workitem' => Ruote.fulldup(h.applied_workitem),
+          'flanking' => h.flanking)
       end
 
       filter
 
       consider_tag
-      consider_timeout
+      consider_timers
 
       apply
     end
@@ -292,7 +313,8 @@ module Ruote::Exp
     #
     def reply_to_parent(workitem, delete=true)
 
-      filter(workitem)
+      filter(workitem) if h.state.nil?
+        # only filter on a normal reply (not cancelling)
 
       if h.tagname
 
@@ -307,12 +329,25 @@ module Ruote::Exp
           'workitem' => workitem)
       end
 
-      if h.timeout_schedule_id && h.state != 'timing_out'
+      # deal with the timers and the schedules
 
-        @context.storage.delete_schedule(h.timeout_schedule_id)
+      %w[ timeout_schedule_id job_id ].each do |sid|
+        @context.storage.delete_schedule(h[sid]) if h[sid]
       end
+        #
+        # legacy schedule ids, to be removed for ruote 2.2.2 or .3
 
-      if h.state == 'failing' # on_error is implicit (#fail got called)
+      @context.storage.delete_schedule(h.schedule_id) if h.schedule_id
+        #
+        # time-driven exps like cron, wait and once now all use h.schedule_id
+
+      h.timers.each do |schedule_id, action|
+        @context.storage.delete_schedule(schedule_id)
+      end if h.timers
+
+      # trigger or vanilla reply
+
+      if h.state == 'failing' # on_error is implicit (#do_fail got called)
 
         trigger('on_error', workitem)
 
@@ -328,7 +363,7 @@ module Ruote::Exp
 
         trigger('on_timeout', workitem)
 
-      elsif h.lost and h.state == nil
+      elsif (h.lost or h.flanking) and h.state.nil?
 
         # do not reply, sit here (and wait for cancellation probably)
 
@@ -365,14 +400,26 @@ module Ruote::Exp
       workitem = msg['workitem']
       fei = workitem['fei']
 
+      removed = h.children.delete(fei)
+        # accept without any check ?
+
+      if msg['flanking']
+
+        (h.flanks ||= []) << fei
+
+        if (not removed) # then it's a timer
+
+          do_persist
+          return
+        end
+      end
+
       if ut = msg['updated_tree']
+
         ct = tree.dup
         ct.last[Ruote::FlowExpressionId.child_id(fei)] = ut
         update_tree(ct)
       end
-
-      h.children.delete(fei)
-        # accept without any check ?
 
       if h.state == 'paused'
 
@@ -409,8 +456,6 @@ module Ruote::Exp
     # is done in the #cancel method).
     #
     def do_cancel(msg)
-
-      @msg = Ruote.fulldup(msg)
 
       flavour = msg['flavour']
 
@@ -456,10 +501,29 @@ module Ruote::Exp
       cancel(flavour)
     end
 
+    # Emits a cancel message for each flanking expression (if any).
+    #
+    def cancel_flanks(flavour)
+
+      return unless h.flanks
+
+      h.flanks.each do |flank_fei|
+
+        @context.storage.put_msg(
+          'cancel',
+          'fei' => flank_fei,
+          'parent_id' => h.fei,
+            # indicating that this is a "cancel child", well...
+          'flavour' => flavour)
+      end
+    end
+
     # This default implementation cancels all the [registered] children
     # of this expression.
     #
     def cancel(flavour)
+
+      cancel_flanks(flavour)
 
       return reply_to_parent(h.applied_workitem) if h.children.empty?
         #
@@ -473,40 +537,24 @@ module Ruote::Exp
         # if the do_persist returns false, it means it failed, implying this
         # expression is stale, let's return, thus discarding this cancel message
 
-      children.each do |cfei|
+      children.each do |child_fei|
         #
         # let's send a cancel message to each of the children
         #
         # maybe some of them are gone or have not yet been applied, anyway,
-        # the message are sent
+        # the messages are sent
 
         @context.storage.put_msg(
           'cancel',
-          'fei' => cfei,
+          'fei' => child_fei,
           'parent_id' => h.fei, # indicating that this is a "cancel child"
           'flavour' => flavour)
       end
-
-      #if ! children.find { |i| Ruote::Exp::FlowExpression.fetch(@context, i) }
-      #  #
-      #  # since none of the children could be found in the storage right now,
-      #  # it could mean that all children are already done or it could mean
-      #  # that they are not yet applied...
-      #  #
-      #  # just to be sure let's send a new cancel message to this expression
-      #  #
-      #  # it's very important, since if there is no child to cancel the parent
-      #  # the flow might get stuck here
-      #  @context.storage.put_msg(
-      #    'cancel',
-      #    'fei' => h.fei,
-      #    'flavour' => flavour)
-      #end
     end
 
     # Called when handling an on_error, will place itself in a 'failing' state
     # and cancel the children (when the reply from the children comes back,
-    # the on_reply will get triggered).
+    # the on_error will get triggered).
     #
     def do_fail(msg)
 
@@ -609,35 +657,46 @@ module Ruote::Exp
       parent.ancestor?(fei)
     end
 
-    # Looks up "on_error" attribute
+    # Given an error, returns the on_error registered for it, or nil if none.
     #
-    def lookup_on_error
+    def local_on_error(err)
 
-      if h.on_error
+      if h.on_error.is_a?(String) or Ruote.is_tree?(h.on_error)
 
-        self
-
-      elsif h.parent_id
-
-        par = parent
-          # :( get_parent would probably be a better name for #parent
-
-        #if par.nil? && ($DEBUG || ARGV.include?('-d'))
-        #  puts "~~"
-        #  puts "parent gone for"
-        #  puts "fei          #{Ruote.sid(h.fei)}"
-        #  puts "tree         #{tree.inspect}"
-        #  puts "replying to  #{Ruote.sid(h.parent_id)}"
-        #  puts "~~"
-        #end
-          # is sometimes helpful during debug sessions
-
-        par ? par.lookup_on_error : nil
-
-      else
-
-        nil
+        return h.on_error
       end
+
+      if h.on_error.is_a?(Array)
+
+        # all for the 'on_error' expression
+        # see test/functional/eft_38_
+
+        h.on_error.each do |oe|
+
+          return oe.last if oe.first.nil?
+
+          crit = Ruote.regex_or_s(oe.first)
+          return oe.last if crit.match(err['message'])
+          return oe.last if crit.match(err['class'])
+        end
+      end
+
+      nil
+    end
+
+    # Looks up "on_error" attribute locally and in the parent expressions,
+    # if any.
+    #
+    def lookup_on_error(err)
+
+      if local_on_error(err)
+        return self
+      end
+      if par = parent
+        return par.lookup_on_error(err)
+      end
+
+      nil
     end
 
     # Looks up parent with on_error attribute and triggers it
@@ -646,25 +705,26 @@ module Ruote::Exp
 
       return false if h.state == 'failing'
 
-      oe_parent = lookup_on_error
-
-      return false unless oe_parent
-        # no parent with on_error attribute found
-
-      handler = oe_parent.on_error.to_s
-
-      return false if handler == ''
-        # empty on_error handler nullifies ancestor's on_error
-
-      workitem = msg['workitem']
-
-      workitem['fields']['__error__'] = {
+      err = {
         'fei' => fei,
         'at' => Ruote.now_to_utc_s,
         'class' => error.class.to_s,
         'message' => error.message,
         'trace' => error.backtrace
       }
+
+      oe_parent = lookup_on_error(err)
+
+      return false unless oe_parent
+        # no parent with on_error attribute found
+
+      handler = oe_parent.local_on_error(err).to_s
+
+      return false if handler == ''
+        # empty on_error handler nullifies ancestor's on_error
+
+      workitem = msg['workitem']
+      workitem['fields']['__error__'] = err
 
       @context.storage.put_msg(
         'fail',
@@ -682,6 +742,7 @@ module Ruote::Exp
     # if it got updated.
     #
     def tree
+
       h.updated_tree || h.original_tree
     end
 
@@ -702,6 +763,7 @@ module Ruote::Exp
     #   seq.do_persist
     #
     def update_tree(t=nil)
+
       h.updated_tree = t || Ruote.fulldup(h.original_tree)
     end
 
@@ -821,29 +883,78 @@ module Ruote::Exp
       end
     end
 
-    # Called by do_apply. Overriden in ParticipantExpression and RefExpression.
+    # Reads the :timeout and :timers attributes and schedule as necessary.
     #
-    def consider_timeout
+    def consider_timers
 
-      do_schedule_timeout(attribute(:timeout))
+      h.has_timers = (attribute(:timers) || attribute(:timeout)) != nil
+        # to enforce pdef defined timers vs participant defined timers
+
+      timers = (attribute(:timers) || '').split(/,/)
+
+      if to = attribute(:timeout)
+        timers << "#{to}: timeout" unless to.strip == ''
+      end
+
+      schedule_timers(timers)
     end
 
-    # Called by consider_timeout (FlowExpression) and schedule_timeout
-    # (ParticipantExpression).
+    # Used by #consider_timers and
+    # ParticipantExpression#consider_participant_timers
     #
-    def do_schedule_timeout(timeout)
+    # Takes care of registering the timers/timeout for an expression.
+    #
+    def schedule_timers(timers)
 
-      timeout = timeout.to_s
+      timers.each do |t|
 
-      return if timeout.strip == ''
+        after, action = if t.is_a?(String)
+          i = t.rindex(':')
+          [ t[0..i - 1], t[i + 1..-1] ]
+        else
+          t
+        end
 
-      h.timeout_schedule_id = @context.storage.put_schedule(
-        'at',
-        h.fei,
-        timeout,
-        'action' => 'cancel',
-        'fei' => h.fei,
-        'flavour' => 'timeout')
+        after = after.strip
+        action = action.strip
+
+        next if after == ''
+
+        msg = case action
+
+          when 'timeout', 'undo', 'pass'
+            { 'action' => 'cancel',
+              'fei' => h.fei,
+              'flavour' => action == 'timeout' ? 'timeout' : nil }
+          when 'redo', 'retry'
+            { 'action' => 'cancel',
+              'fei' => h.fei,
+              're_apply' => true }
+          when /^error( .+)?$/
+            { 'action' => 'cancel',
+              'fei' => h.fei,
+              're_apply' => {
+                'tree' => [
+                  'error', { $~[1].to_s.strip => nil }, [] ] } }
+          when CommandExpression::REGEXP
+            { 'action' => 'cancel',
+              'fei' => h.fei,
+              're_apply' => {
+                'tree' => [
+                  $~[1], { $~[2].split(' ').last.to_s => nil }, [] ] } }
+          else
+            { 'action' => 'apply',
+              'wfid' => h.fei['wfid'],
+              'expid' => h.fei['expid'],
+              'parent_id' => h.fei,
+              'flanking' => true,
+              'tree' => [ action, {}, [] ],
+              'workitem' => h.applied_workitem }
+        end
+
+        (h.timers ||= []) <<
+          [ @context.storage.put_schedule('at', h.fei, after, msg), action ]
+      end
     end
 
     # (Called by trigger_on_cancel & co)
@@ -879,30 +990,46 @@ module Ruote::Exp
     #
     def trigger(on, workitem)
 
-      hon = h[on]
-
-      t = hon.is_a?(String) ? [ hon, {}, [] ] : hon
-
-      if on == 'on_error'
-
-        if hon == 'redo' or hon == 'retry'
-
-          t = tree
-
-        elsif hon == 'undo' or hon == 'pass'
-
-          h.state = 'failed'
-          reply_to_parent(workitem)
-
-          return
-        end
-
-      elsif on == 'on_timeout'
-
-        t = tree if hon == 'redo' or hon == 'retry'
+      handler = if on == 'on_error'
+        local_on_error(h.applied_workitem['fields']['__error__'])
+      else
+        h[on]
       end
 
-      supplant_with(t, 'trigger' => on)
+      new_tree = handler.is_a?(String) ? [ handler, {}, [] ] : handler
+
+      if on == 'on_error' or on == 'on_timeout'
+
+        case handler
+
+          when 'redo', 'retry'
+
+            new_tree = tree
+
+          when 'undo', 'pass'
+
+            h.state = 'failed'
+            reply_to_parent(workitem)
+
+            return # let's forget this error
+
+          when CommandExpression::REGEXP
+
+            hh = handler.split(' ')
+            command = hh.first
+            step = hh.last
+              # 'jump to shark' or 'jump shark', ...
+
+            h.state = nil
+            workitem['fields'][CommandMixin::F_COMMAND] = [ command, step ]
+
+            reply(workitem)
+
+            return # we're dealing with it
+        end
+      end
+
+      supplant_with(new_tree, 'trigger' => on)
     end
   end
 end

@@ -139,7 +139,7 @@
 [o] reserve : perhaps it's better to have an atomic get and set variable...
 [o] clean up lookup_var/set_var into locate_var/lookup_var/set_var
 [x] Sun Hao's up-to-date-tree idea ${f:participant_name} ps#resolved_tree
-[o] error : when an error expression is cancelled, should the err get remove 
+[o] error : when an error expression is cancelled, should the err get removed
     from the process status ? yes.
 [o] file logger / history service
 [o] engine.process_history(wfid)
@@ -295,6 +295,7 @@
 [o] eft_18 weak with jruby-1.5.1 and 1.5.6
 [o] participant : consume/cancel/accept?/on_reply without params
 [o] participant : consume -> on_workitem
+[o] remove abort_on_exception=true
 
 [ ] exp : at expression ? comparable to cron
 [x] exp : exp (restricted form of eval ?) (is it apply ?)
@@ -341,8 +342,8 @@
 
 [ ] @children diff/undiff idea ?
 
-[ ] :on_timeout => :rewind (break, jump to x)...
-[ ] :on_error => :rewind (break, jump to x)...
+[o] :on_timeout => :rewind (break, jump to x)...
+[o] :on_error => :rewind (break, jump to x)...
 
 [o] cursor : 'reset' command ?
 [ ] cursor : 'restart' alias for 'reset' ?
@@ -359,8 +360,6 @@
 [ ] [un]set_var : via message ? should be ok like that... Not much traffic there
 
 [ ] empty iterator or concurrent-iterator, log ? crash ? empty while...
-
-[ ] remove abort_on_exception=true
 
 [ ] shell ? irb ? Shell.new(storage)
 [ ] focus on fulldup or json.dup (via fulldup ?)
@@ -477,11 +476,18 @@
 [ ] @engine.context['trust_code_participants'] = true
 [ ] @engine.register(x, :trusted => true, &block)
 [ ] security service ? context['x'] but then, more advanced behaviours
+[ ] subaltern
 
 [o] register :toto, :accept? => lambda { |workitem| ... }
 [o] register :toto, :do_not_thread => lambda { |workitem| ... }
 
 [x] investigate 1.9's json
 [ ] Parslet for conditions ?
+[ ] Subaltern for conditions ?
 [ ] enhance radial/Parslet error messages (cf Raphael)
+
+[ ] citerator: drop the need for the sequence --> implicit sequence
+
+[ ] concurrence: allow empty
+[ ] citerator: allow empty
 

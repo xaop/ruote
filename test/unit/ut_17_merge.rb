@@ -5,7 +5,7 @@
 # Fri May 13 14:12:52 JST 2011
 #
 
-require File.join(File.dirname(__FILE__), '..', 'test_helper.rb')
+require File.expand_path('../../test_helper', __FILE__)
 
 module Ruote; end
 require 'ruote/exp/merge'
@@ -100,12 +100,14 @@ class MergeTest < Test::Unit::TestCase
 
     workitems = [
       new_workitem('a' => 0, 'b' => [ 'x', 'y' ], 'c' => { 'aa' => 'bb' }),
-      new_workitem('a' => 1, 'b' => [ 'x', 'z' ], 'c' => { 'cc' => 'dd' })
+      new_workitem('a' => 1, 'b' => [ 'y', 'z' ], 'c' => { 'cc' => 'dd' })
     ]
 
     assert_equal(
       { 'fields' => {
-        'a' => 1, 'b' => [ 'x', 'y', 'z' ], 'c' => { 'aa' => 'bb', 'cc' => 'dd' }
+        'a' => 1,
+        'b' => [ 'x', 'y', 'z' ],
+        'c' => { 'aa' => 'bb', 'cc' => 'dd' }
       } },
       Merger.new.merge_workitems(workitems, 'union', true))
 
@@ -119,6 +121,22 @@ class MergeTest < Test::Unit::TestCase
         'a' => 1, 'b' => [ 'x', 'y', 'x', 'z' ], 'c' => { 'aa' => 'bb', 'cc' => 'dd' }
       } },
       Merger.new.merge_workitems(workitems, 'union', false))
+  end
+
+  def test_concat
+
+    workitems = [
+      new_workitem('a' => 0, 'b' => [ 'x', 'y' ], 'c' => { 'aa' => 'bb' }),
+      new_workitem('a' => 1, 'b' => [ 'y', 'z' ], 'c' => { 'cc' => 'dd' })
+    ]
+
+    assert_equal(
+      { 'fields' => {
+        'a' => 1,
+        'b' => [ 'x', 'y', 'y', 'z' ],
+        'c' => { 'aa' => 'bb', 'cc' => 'dd' }
+      } },
+      Merger.new.merge_workitems(workitems, 'concat'))
   end
 end
 
